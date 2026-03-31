@@ -15,7 +15,10 @@
   <!-- 顶部 -->
   <header>
     <span class="logo">🐱 猫语翻译器</span>
-    <span class="stats" id="headerStats">今日 0 条 / 总计 0 条</span>
+    <div class="header-right">
+      <span class="stats" id="headerStats">今日 0 条 / 总计 0 条</span>
+      <button id="settingsBtn" class="settings-btn" title="设置" type="button">⚙️</button>
+    </div>
   </header>
 
   <main>
@@ -27,6 +30,8 @@
       </button>
       <div id="timer" class="timer hidden">00:00</div>
       <div id="recordingStatus" class="status"></div>
+      <!-- 波形 Canvas -->
+      <canvas id="waveformCanvas" class="waveform-canvas hidden"></canvas>
     </section>
 
     <!-- 最新结果 -->
@@ -46,6 +51,67 @@
       </div>
     </section>
   </main>
+
+  <!-- 设置遮罩 -->
+  <div id="settingsOverlay" class="settings-overlay"></div>
+
+  <!-- 设置面板 -->
+  <div id="settingsPanel" class="settings-panel">
+    <div class="settings-header">
+      <h3>⚙️ 设置</h3>
+      <button id="closeSettingsBtn" class="close-settings-btn" type="button">✕</button>
+    </div>
+
+    <div class="settings-group">
+      <label class="settings-label">录音模式</label>
+      <div class="radio-group" id="modeGroup">
+        <label class="radio-option active" data-value="manual">
+          <input type="radio" name="mode" value="manual" checked>
+          <span class="radio-custom"></span>
+          <span>手动</span>
+        </label>
+        <label class="radio-option" data-value="auto" id="autoModeOption">
+          <input type="radio" name="mode" value="auto">
+          <span class="radio-custom"></span>
+          <span>自动（VAD）</span>
+        </label>
+      </div>
+      <p class="settings-hint hidden" id="vadNotSupported">您的浏览器不支持自动模式</p>
+    </div>
+
+    <div class="settings-group">
+      <label class="settings-label">VAD 灵敏度</label>
+      <div class="slider-row">
+        <input type="range" id="vadSensitivity" min="-50" max="-20" step="1" value="-35" class="settings-slider">
+        <span class="slider-value" id="vadSensitivityLabel">中等</span>
+      </div>
+      <div class="slider-hints">
+        <span>高灵敏</span>
+        <span>低灵敏</span>
+      </div>
+    </div>
+
+    <div class="settings-group">
+      <label class="settings-label">自动停止安静时长</label>
+      <div class="slider-row">
+        <input type="range" id="silenceDuration" min="1" max="5" step="0.5" value="2" class="settings-slider">
+        <span class="slider-value" id="silenceDurationLabel">2 秒</span>
+      </div>
+      <div class="slider-hints">
+        <span>1 秒</span>
+        <span>5 秒</span>
+      </div>
+    </div>
+
+    <div class="settings-group">
+      <label class="settings-label">最大录音时长</label>
+      <select id="maxDuration" class="settings-select">
+        <option value="60000">1 分钟</option>
+        <option value="180000">3 分钟</option>
+        <option value="300000" selected>5 分钟</option>
+      </select>
+    </div>
+  </div>
 
   <script src="js/app.js"></script>
 </body>

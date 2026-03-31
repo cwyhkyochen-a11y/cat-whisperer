@@ -61,4 +61,14 @@ function initTables(db) {
   `);
 }
 
-module.exports = { getDb, UPLOADS_DIR };
+function closeDb() {
+  if (db) {
+    db.close();
+    db = null;
+  }
+}
+
+process.on('SIGTERM', closeDb);
+process.on('SIGINT', closeDb);
+
+module.exports = { getDb, closeDb, UPLOADS_DIR };

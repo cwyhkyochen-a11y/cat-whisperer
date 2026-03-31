@@ -16,11 +16,23 @@ function getDayPeriod(hour) {
 }
 
 /**
+ * 按格式估算比特率 (kbps)
+ */
+function getEstimatedBitrate(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext === '.wav') return 1411;
+  if (ext === '.mp3' || ext === '.m4a') return 128;
+  // webm, ogg 等
+  return 32;
+}
+
+/**
  * 分析音频文件，提取基础特征
  * @param {string} filePath - 音频文件路径
+ * @param {number|null} actualDurationMs - 前端传来的实际时长（毫秒），可选
  * @returns {object} 特征 JSON
  */
-function analyzeAudio(filePath) {
+function analyzeAudio(filePath, actualDurationMs) {
   const stats = fs.statSync(filePath);
   const now = new Date();
 
@@ -29,10 +41,17 @@ function analyzeAudio(filePath) {
   const minute = now.getMinutes();
   const timeStr = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
 
-  // 粗略估计时长：WebM/OGG 大约 16-32kbps，取中间值 ~24kbps
   const fileSizeBytes = stats.size;
-  const estimatedDurationSec = Math.round(fileSizeBytes / (24 * 1024 / 8));
-  const durationEstimateMs = estimatedDurationSec * 1000;
+
+  // 优先使用前端传来的实际时长
+  let durationEstimateMs;
+  if (actualDurationMs && actualDurationMs > 0) {
+    durationEstimateMs = actualDurationMs;
+  } else {
+    const bitrate = getEstimatedBitrate(filePath);
+    const estimatedDurationSec = Math.round(fileSizeBytes / (bitrate * 1024 / 8));
+    durationEstimateMs = estimatedDurationSec * 1000;
+  }
 
   return {
     duration_estimate: durationEstimateMs,

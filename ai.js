@@ -1,5 +1,6 @@
 const { getDb } = require('./db');
 const { analyzeAudio } = require('./analyzer');
+const path = require('path');
 
 // 从 .env 读取 AI 配置
 const AI_API_BASE = process.env.AI_API_BASE;
@@ -10,20 +11,53 @@ const SYSTEM_PROMPT = '你是猫行为学专家，根据音频特征和上下文
 
 /**
  * 从 AI 返回文本中提取 JSON
+ * 先尝试直接 parse，失败后用括号计数法找到完整 JSON 块
  */
 function extractJson(text) {
   try {
     return JSON.parse(text);
   } catch {
-    // 尝试用正则提取 JSON 块
-    const match = text.match(/\{[\s\S]*?\}/);
-    if (match) {
-      try {
-        return JSON.parse(match[0]);
-      } catch {
-        return null;
+    // 用括号计数法找到完整 JSON 块
+    const start = text.indexOf('{');
+    if (start === -1) return null;
+
+    let depth = 0;
+    let inString = false;
+    let escape = false;
+
+    for (let i = start; i < text.length; i++) {
+      const ch = text[i];
+
+      if (escape) {
+        escape = false;
+        continue;
+      }
+
+      if (ch === '\\' && inString) {
+        escape = true;
+        continue;
+      }
+
+      if (ch === '"') {
+        inString = !inString;
+        continue;
+      }
+
+      if (inString) continue;
+
+      if (ch === '{') depth++;
+      if (ch === '}') {
+        depth--;
+        if (depth === 0) {
+          try {
+            return JSON.parse(text.slice(start, i + 1));
+          } catch {
+            return null;
+          }
+        }
       }
     }
+
     return null;
   }
 }
@@ -84,22 +118,31 @@ ${JSON.stringify(context, null, 2)}
 请严格以 JSON 格式返回，不要包含其他文字。`;
 
   try {
-    const response = await fetch(`${AI_API_BASE}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${AI_API_KEY}`
-      },
-      body: JSON.stringify({
-        model: AI_MODEL,
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: userPrompt }
-        ],
-        temperature: 0.7,
-        max_tokens: 500
-      })
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30000);
+
+    let response;
+    try {
+      response = await fetch(`${AI_API_BASE}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${AI_API_KEY}`
+        },
+        body: JSON.stringify({
+          model: AI_MODEL,
+          messages: [
+            { role: 'system', content: SYSTEM_PROMPT },
+            { role: 'user', content: userPrompt }
+          ],
+          temperature: 0.7,
+          max_tokens: 500
+        }),
+        signal: controller.signal
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
 
     if (!response.ok) {
       throw new Error(`AI API 返回 ${response.status}: ${await response.text()}`);
@@ -144,7 +187,6 @@ async function interpretRecording(db, recordingId) {
   }
 
   // 分析音频特征
-  const path = require('path');
   const { UPLOADS_DIR } = require('./db');
   const filePath = path.join(UPLOADS_DIR, recording.filename);
   const features = analyzeAudio(filePath);

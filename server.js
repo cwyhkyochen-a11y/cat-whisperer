@@ -12,6 +12,7 @@ const { interpretRecording } = require('./ai');
 
 const app = express();
 const PORT = process.env.PORT || 3010;
+const isDev = process.env.NODE_ENV !== 'production';
 
 // 中间件
 app.use(cors());
@@ -63,13 +64,15 @@ app.post('/api/recordings/upload', upload.single('audio'), (req, res) => {
     const db = getDb();
     const id = uuidv4();
     const filePath = path.join(UPLOADS_DIR, req.file.filename);
-    const features = analyzeAudio(filePath);
+    const actualDuration = req.body.duration_ms ? parseInt(req.body.duration_ms) : null;
+    const triggerType = req.body.trigger_type || 'manual';
+    const features = analyzeAudio(filePath, actualDuration);
 
     // 插入 recording
     db.prepare(`
       INSERT INTO recordings (id, filename, original_name, duration_ms, file_size, trigger_type)
-      VALUES (?, ?, ?, ?, ?, 'manual')
-    `).run(id, req.file.filename, req.file.originalname, features.duration_estimate, features.file_size);
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(id, req.file.filename, req.file.originalname, features.duration_estimate, features.file_size, triggerType);
 
     // 自动创建一条 auto label（基于时间段）
     db.prepare(`
@@ -83,7 +86,7 @@ app.post('/api/recordings/upload', upload.single('audio'), (req, res) => {
     res.json(recording);
   } catch (err) {
     console.error('[Upload] 错误:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: isDev ? err.message : '服务器内部错误' });
   }
 });
 
@@ -108,10 +111,22 @@ app.get('/api/recordings', (req, res) => {
       LIMIT ? OFFSET ?
     `).all(limit, offset);
 
-    // 附带标签
-    const stmt = db.prepare('SELECT * FROM labels WHERE recording_id = ?');
+    // 附带标签（批量查询，避免 N+1）
+    const recordingIds = recordings.map(r => r.id);
+    let labelsByRecording = {};
+    if (recordingIds.length > 0) {
+      const placeholders = recordingIds.map(() => '?').join(',');
+      const allLabels = db.prepare(
+        `SELECT * FROM labels WHERE recording_id IN (${placeholders})`
+      ).all(...recordingIds);
+      allLabels.forEach(l => {
+        if (!labelsByRecording[l.recording_id]) labelsByRecording[l.recording_id] = [];
+        labelsByRecording[l.recording_id].push(l);
+      });
+    }
+
     const result = recordings.map(r => {
-      const labels = stmt.all(r.id);
+      const labels = labelsByRecording[r.id] || [];
       const interpretation = r.interp_id ? {
         id: r.interp_id,
         translation: r.translation,
@@ -130,7 +145,7 @@ app.get('/api/recordings', (req, res) => {
     res.json({ data: result, page, limit, total, totalPages: Math.ceil(total / limit) });
   } catch (err) {
     console.error('[List] 错误:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: isDev ? err.message : '服务器内部错误' });
   }
 });
 
@@ -147,7 +162,7 @@ app.get('/api/recordings/:id', (req, res) => {
     res.json({ ...recording, labels, interpretation: interpretation || null });
   } catch (err) {
     console.error('[Detail] 错误:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: isDev ? err.message : '服务器内部错误' });
   }
 });
 
@@ -166,7 +181,7 @@ app.get('/api/recordings/:id/audio', (req, res) => {
     res.sendFile(filePath);
   } catch (err) {
     console.error('[Audio] 错误:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: isDev ? err.message : '服务器内部错误' });
   }
 });
 
@@ -178,7 +193,7 @@ app.post('/api/recordings/:id/interpret', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.error('[Interpret] 错误:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: isDev ? err.message : '服务器内部错误' });
   }
 });
 
@@ -189,10 +204,13 @@ app.delete('/api/recordings/:id', (req, res) => {
     const recording = db.prepare('SELECT filename FROM recordings WHERE id = ?').get(req.params.id);
     if (!recording) return res.status(404).json({ error: '录音不存在' });
 
-    // 删除关联数据
-    db.prepare('DELETE FROM labels WHERE recording_id = ?').run(req.params.id);
-    db.prepare('DELETE FROM interpretations WHERE recording_id = ?').run(req.params.id);
-    db.prepare('DELETE FROM recordings WHERE id = ?').run(req.params.id);
+    // 删除关联数据（事务包裹，保证原子性）
+    const deleteAll = db.transaction((id) => {
+      db.prepare('DELETE FROM labels WHERE recording_id = ?').run(id);
+      db.prepare('DELETE FROM interpretations WHERE recording_id = ?').run(id);
+      db.prepare('DELETE FROM recordings WHERE id = ?').run(id);
+    });
+    deleteAll.run(req.params.id);
 
     // 删除音频文件
     const filePath = path.join(UPLOADS_DIR, recording.filename);
@@ -201,7 +219,7 @@ app.delete('/api/recordings/:id', (req, res) => {
     res.json({ success: true, message: '已删除' });
   } catch (err) {
     console.error('[Delete] 错误:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: isDev ? err.message : '服务器内部错误' });
   }
 });
 
@@ -234,7 +252,7 @@ app.get('/api/stats', (req, res) => {
     res.json({ total, today, byCategory, byEmotion });
   } catch (err) {
     console.error('[Stats] 错误:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: isDev ? err.message : '服务器内部错误' });
   }
 });
 
@@ -247,7 +265,7 @@ app.use((err, req, res, next) => {
     return res.status(400).json({ error: `上传错误: ${err.message}` });
   }
   if (err) {
-    return res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: isDev ? err.message : '服务器内部错误' });
   }
   next();
 });
