@@ -1,7 +1,7 @@
 /**
- * 猫语翻译器 v1.1 — 前端逻辑
+ * 猫语翻译器 v1.1.1 — 前端逻辑
  * 纯 JS，无框架依赖
- * 新增: VAD 自动检测 + 实时波形 + 设置页
+ * v1.1.1: 亮色主题 + Lucide 图标
  */
 
 (function () {
@@ -230,6 +230,13 @@
 
   const toastContainer = createToastContainer();
 
+  // ===== Lucide 图标辅助 =====
+  function refreshIcons() {
+    if (typeof lucide !== 'undefined') {
+      lucide.createIcons();
+    }
+  }
+
   // ===== Toast 系统 =====
   function createToastContainer() {
     const div = document.createElement('div');
@@ -357,57 +364,37 @@
   function setAppState(newState, statusText) {
     appState = newState;
     recordBtn.className = 'record-btn';
-    const icon = recordBtn.querySelector('.icon');
-    const text = recordBtn.querySelector('.text');
 
-    if (settings.mode === 'manual') {
-      switch (newState) {
-        case 'idle':
-          icon.textContent = '🎤';
-          text.textContent = '开始录音';
-          break;
-        case 'recording':
-          recordBtn.classList.add('recording');
-          icon.textContent = '⏹';
-          text.textContent = '停止录音';
-          break;
-        case 'uploading':
-          recordBtn.classList.add('uploading');
-          icon.textContent = '⏳';
-          text.textContent = '上传中…';
-          break;
-        case 'interpreting':
-          recordBtn.classList.add('interpreting');
-          icon.textContent = '🔮';
-          text.textContent = '解读中…';
-          break;
-      }
+    const iconEl = recordBtn.querySelector('.icon');
+    const textEl = recordBtn.querySelector('.text');
+
+    const iconMap = {
+      idle: { icon: 'mic', text: '开始录音' },
+      recording: { icon: 'square', text: '停止录音' },
+      uploading: { icon: 'loader-2', text: '上传中…' },
+      interpreting: { icon: 'sparkles', text: '解读中…' },
+      monitoring: { icon: 'ear', text: '监听中…' }
+    };
+
+    let config;
+    if (settings.mode === 'auto' && (newState === 'idle' || newState === 'monitoring')) {
+      config = iconMap.monitoring;
+    } else if (settings.mode === 'auto' && newState === 'recording') {
+      config = { icon: 'music', text: '检测到猫叫！' };
     } else {
-      // 自动模式
-      switch (newState) {
-        case 'idle':
-        case 'monitoring':
-          recordBtn.classList.add('monitoring');
-          icon.textContent = '👂';
-          text.textContent = '监听中…';
-          break;
-        case 'recording':
-          recordBtn.classList.add('recording');
-          icon.textContent = '🎵';
-          text.textContent = '检测到猫叫！';
-          break;
-        case 'uploading':
-          recordBtn.classList.add('uploading');
-          icon.textContent = '⏳';
-          text.textContent = '上传中…';
-          break;
-        case 'interpreting':
-          recordBtn.classList.add('interpreting');
-          icon.textContent = '🔮';
-          text.textContent = '解读中…';
-          break;
-      }
+      config = iconMap[newState] || iconMap.idle;
     }
+
+    iconEl.setAttribute('data-lucide', config.icon);
+    textEl.textContent = config.text;
+
+    // 特殊样式
+    if (newState === 'recording') recordBtn.classList.add('recording');
+    else if (newState === 'uploading' || newState === 'interpreting') recordBtn.classList.add('uploading');
+    else if (newState === 'monitoring' || (settings.mode === 'auto' && newState === 'idle')) recordBtn.classList.add('monitoring');
+
+    // 重新渲染 Lucide 图标
+    refreshIcons();
 
     if (statusText !== undefined) {
       statusEl.textContent = statusText;
@@ -734,15 +721,12 @@
 
     if (!analyser) {
       // 手动模式没有 analyser，简单画一条静音线
-      canvasCtx.strokeStyle = '#8b5cf6';
+      canvasCtx.strokeStyle = '#f59e0b';
       canvasCtx.lineWidth = 2;
-      canvasCtx.shadowColor = '#8b5cf6';
-      canvasCtx.shadowBlur = 8;
       canvasCtx.beginPath();
       canvasCtx.moveTo(0, h / 2);
       canvasCtx.lineTo(w, h / 2);
       canvasCtx.stroke();
-      canvasCtx.shadowBlur = 0;
       return;
     }
 
@@ -750,11 +734,9 @@
     const timeData = new Float32Array(bufLen);
     analyser.getFloatTimeDomainData(timeData);
 
-    // 绘制波形
-    canvasCtx.strokeStyle = '#8b5cf6';
+    // 绘制波形（琥珀色）
+    canvasCtx.strokeStyle = '#f59e0b';
     canvasCtx.lineWidth = 2;
-    canvasCtx.shadowColor = '#8b5cf6';
-    canvasCtx.shadowBlur = 10;
     canvasCtx.beginPath();
 
     const sliceWidth = w / bufLen;
@@ -771,7 +753,6 @@
     }
     canvasCtx.lineTo(w, h / 2);
     canvasCtx.stroke();
-    canvasCtx.shadowBlur = 0;
   }
 
   function drawFrequencyBars(w, h) {
@@ -797,20 +778,15 @@
 
       const x = i * (barWidth + 2) + 1;
 
-      // 超过阈值的变红色
+      // 超过阈值的变红色，未超过用琥珀色
       if (barHeight > thresholdHeight) {
-        canvasCtx.fillStyle = 'rgba(239, 68, 68, 0.8)';
-        canvasCtx.shadowColor = '#ef4444';
-        canvasCtx.shadowBlur = 6;
+        canvasCtx.fillStyle = 'rgba(239, 68, 68, 0.7)';
       } else {
-        canvasCtx.fillStyle = 'rgba(139, 92, 246, 0.6)';
-        canvasCtx.shadowColor = '#8b5cf6';
-        canvasCtx.shadowBlur = 3;
+        canvasCtx.fillStyle = 'rgba(245, 158, 11, 0.5)';
       }
 
       canvasCtx.fillRect(x, h - barHeight, barWidth, barHeight);
     }
-    canvasCtx.shadowBlur = 0;
   }
 
   // ===== 设置面板 =====
@@ -948,12 +924,14 @@
     if (!items || items.length === 0) {
       historyList.innerHTML = '';
       emptyState.classList.remove('hidden');
+      refreshIcons();
       return;
     }
 
     emptyState.classList.add('hidden');
     historyList.innerHTML = items.map(item => renderHistoryItem(item)).join('');
     bindHistoryEvents();
+    refreshIcons();
   }
 
   function renderHistoryItem(item) {
@@ -974,8 +952,12 @@
             <div class="item-tags">${renderLabels(labels)}</div>
           </div>
           <div class="item-actions">
-            <button class="btn-icon play-btn" data-id="${id}" title="播放">▶</button>
-            <button class="btn-icon delete-btn" data-id="${id}" title="删除">✕</button>
+            <button class="btn-icon play-btn" data-id="${id}" title="播放">
+              <i data-lucide="play"></i>
+            </button>
+            <button class="btn-icon delete-btn" data-id="${id}" title="删除">
+              <i data-lucide="x"></i>
+            </button>
           </div>
         </div>
       </div>
@@ -1030,7 +1012,7 @@
       detailDiv.className = 'detail';
       detailDiv.innerHTML = `
         <div class="interpretation">${translation}</div>
-        ${advice ? `<div class="advice">💡 ${advice}</div>` : ''}
+        ${advice ? `<div class="advice"><i data-lucide="lightbulb"></i> ${advice}</div>` : ''}
         <div class="detail-meta">
           ${confidence !== undefined ? `<span>置信度: <span class="confidence">${Math.round(confidence * 100)}%</span></span>` : ''}
           ${labels.length ? `<span>情绪: ${labels.map(l => LABEL_CN[l] || l).join('、')}</span>` : ''}
@@ -1038,6 +1020,7 @@
       `;
 
       el.appendChild(detailDiv);
+      refreshIcons();
     } catch (err) {
       showToast('加载详情失败: ' + err.message, 'error');
     }
@@ -1051,7 +1034,9 @@
       currentAudio.pause();
       currentAudio = null;
       btn.classList.remove('playing');
-      btn.textContent = '▶';
+      // 切换回 play 图标
+      btn.innerHTML = '<i data-lucide="play"></i>';
+      refreshIcons();
       return;
     }
 
@@ -1059,7 +1044,7 @@
       currentAudio.pause();
       historyList.querySelectorAll('.play-btn.playing').forEach(b => {
         b.classList.remove('playing');
-        b.textContent = '▶';
+        b.innerHTML = '<i data-lucide="play"></i>';
       });
     }
 
@@ -1067,19 +1052,23 @@
     audio.crossOrigin = 'anonymous';
     currentAudio = audio;
     btn.classList.add('playing');
-    btn.textContent = '⏸';
+    // 切换到 pause 图标
+    btn.innerHTML = '<i data-lucide="pause"></i>';
+    refreshIcons();
 
     audio.play().catch(err => {
       showToast('播放失败: ' + err.message, 'error');
       btn.classList.remove('playing');
-      btn.textContent = '▶';
+      btn.innerHTML = '<i data-lucide="play"></i>';
       currentAudio = null;
+      refreshIcons();
     });
 
     audio.onended = () => {
       btn.classList.remove('playing');
-      btn.textContent = '▶';
+      btn.innerHTML = '<i data-lucide="play"></i>';
       currentAudio = null;
+      refreshIcons();
     };
   }
 
@@ -1100,6 +1089,7 @@
           item.remove();
           if (historyList.children.length === 0) {
             emptyState.classList.remove('hidden');
+            refreshIcons();
           }
         }, 300);
       }
@@ -1161,6 +1151,9 @@
 
     // 根据设置更新按钮初始状态
     setAppState('idle');
+
+    // 初始渲染 Lucide 图标
+    refreshIcons();
 
     fetchStats();
     fetchRecordings();
