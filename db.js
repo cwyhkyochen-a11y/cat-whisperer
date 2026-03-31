@@ -59,7 +59,36 @@ function initTables(db) {
       created_at TEXT DEFAULT (datetime('now')),
       FOREIGN KEY (recording_id) REFERENCES recordings(id)
     );
+
+    CREATE TABLE IF NOT EXISTS frames (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      recording_id TEXT NOT NULL,
+      frame_index INTEGER NOT NULL,
+      filename TEXT NOT NULL,
+      captured_at TEXT,
+      FOREIGN KEY (recording_id) REFERENCES recordings(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS annotations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      recording_id TEXT NOT NULL,
+      behavior TEXT,
+      emotion TEXT,
+      translation TEXT,
+      spectrum_tags TEXT,
+      visual_cues TEXT,
+      confidence REAL,
+      is_verified INTEGER DEFAULT 0,
+      verified_behavior TEXT,
+      model TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (recording_id) REFERENCES recordings(id) ON DELETE CASCADE
+    );
   `);
+
+  // 列迁移：recordings 新增字段
+  try { db.exec(`ALTER TABLE recordings ADD COLUMN spectrogram_path TEXT`); } catch {}
+  try { db.exec(`ALTER TABLE recordings ADD COLUMN features_json TEXT`); } catch {}
 }
 
 function closeDb() {

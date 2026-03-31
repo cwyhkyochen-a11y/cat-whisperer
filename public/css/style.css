@@ -1024,6 +1024,199 @@ main {
   background: var(--bg-tertiary);
 }
 
+/* ===== v1.2 视频捕获 + 频谱/帧展示 UI ===== */
+
+/* --- 视频预览浮窗 --- */
+.video-preview {
+  position: relative;
+  width: 200px;
+  height: 150px;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 2px solid var(--border);
+  margin-bottom: 16px;
+  background: #000;
+}
+
+.video-preview video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.video-label {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  background: rgba(0,0,0,0.6);
+  color: #fff;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+}
+
+/* --- 录像模式开关 --- */
+.recorder-options {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+
+.mode-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.mode-toggle input {
+  accent-color: var(--accent);
+}
+
+.mode-toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* --- 结果展示区 --- */
+.result-area {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.result-card .result-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.result-card .result-card-header [data-lucide] {
+  width: 18px;
+  height: 18px;
+  color: var(--accent);
+}
+
+/* --- 频谱图 --- */
+.spectrogram-container {
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  border: 1px solid var(--border-light);
+  margin-bottom: 12px;
+}
+
+.spectrogram-img {
+  width: 100%;
+  height: auto;
+  display: block;
+  cursor: pointer;
+  transition: opacity 150ms;
+}
+
+.spectrogram-img:hover {
+  opacity: 0.9;
+}
+
+/* --- 特征标签 --- */
+.features-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.feature-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* --- 视频帧画廊 --- */
+.frames-gallery {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.frame-thumb {
+  width: 160px;
+  height: 120px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-light);
+  cursor: pointer;
+  transition: all 150ms;
+}
+
+.frame-thumb:hover {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-md);
+}
+
+/* --- 翻译结果 --- */
+.translation-text {
+  font-size: 17px;
+  line-height: 1.6;
+  color: var(--text-primary);
+  font-weight: 400;
+}
+
+/* --- 行为标签 --- */
+.behavior-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 12px 0;
+}
+
+.behavior-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  border-radius: var(--radius-full);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* --- 建议文本 --- */
+.suggestion-text {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  padding: 10px 14px;
+  background: var(--accent-50);
+  border-radius: var(--radius-sm);
+  border-left: 3px solid var(--accent);
+}
+
+/* --- 标注操作按钮 --- */
+.annotation-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-light);
+}
+
+.annotation-actions .btn {
+  flex: 1;
+}
+
 /* --- 响应式 --- */
 @media (max-width: 480px) {
   header {

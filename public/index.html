@@ -23,6 +23,21 @@
   <main>
     <!-- 录音控制区 -->
     <section class="recorder">
+      <!-- 视频预览浮窗 -->
+      <div id="videoPreview" class="video-preview hidden">
+        <video id="previewVideo" autoplay muted playsinline></video>
+        <div class="video-label">录像中</div>
+      </div>
+      <canvas id="frameCanvas" style="display:none"></canvas>
+
+      <!-- 录像模式开关 -->
+      <div class="recorder-options">
+        <label class="mode-toggle">
+          <input type="checkbox" id="videoModeToggle">
+          <span class="mode-toggle-label"><i data-lucide="video"></i> 录像模式</span>
+        </label>
+      </div>
+
       <button id="recordBtn" class="record-btn" type="button">
         <i data-lucide="mic" class="icon"></i>
         <span class="text">开始录音</span>
@@ -33,7 +48,52 @@
       <canvas id="waveformCanvas" class="waveform-canvas hidden"></canvas>
     </section>
 
-    <!-- 最新结果 -->
+    <!-- 结果展示区 -->
+    <div id="resultArea" class="result-area hidden">
+      <!-- 频谱图 -->
+      <div class="result-card">
+        <div class="result-card-header">
+          <i data-lucide="activity"></i>
+          <span>频谱分析</span>
+        </div>
+        <div id="spectrogramContainer" class="spectrogram-container">
+          <img id="spectrogramImg" class="spectrogram-img" alt="频谱图" />
+        </div>
+        <div id="featuresTags" class="features-tags"></div>
+      </div>
+
+      <!-- 视频帧 -->
+      <div id="framesCard" class="result-card hidden">
+        <div class="result-card-header">
+          <i data-lucide="camera"></i>
+          <span>截帧</span>
+        </div>
+        <div id="framesGallery" class="frames-gallery"></div>
+      </div>
+
+      <!-- AI 分析结果 -->
+      <div class="result-card">
+        <div class="result-card-header">
+          <i data-lucide="message-circle"></i>
+          <span>翻译结果</span>
+        </div>
+        <div id="translationText" class="translation-text"></div>
+        <div id="behaviorTags" class="behavior-tags"></div>
+        <div id="suggestionText" class="suggestion-text"></div>
+
+        <!-- 标注确认 -->
+        <div class="annotation-actions">
+          <button id="confirmBtn" class="btn btn-secondary" type="button">
+            <i data-lucide="check"></i> 确认标注
+          </button>
+          <button id="correctBtn" class="btn btn-secondary" type="button">
+            <i data-lucide="edit-3"></i> 修正
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 最新结果 (旧版兼容) -->
     <section id="latestResult" class="result-card hidden">
       <h3><i data-lucide="message-circle"></i> 翻译结果</h3>
       <div class="translation"></div>

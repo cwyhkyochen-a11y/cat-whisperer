@@ -193,6 +193,12 @@
   let vadStream = null; // VAD 自己管理麦克风，录制时直接用
   let recordingTriggerType = 'manual'; // 'manual' | 'auto'
 
+  // ===== 视频模式 =====
+  let videoMode = false;
+  let videoStream = null;
+  let capturedFrames = []; // [{ blob, at }]
+  let videoFrameTimeoutId = null;
+
   // ===== Canvas 波形 =====
   let canvasCtx = null;
   let canvasAnimId = null;
@@ -227,6 +233,11 @@
   const silenceDurationSlider = $('#silenceDuration');
   const silenceDurationLabel = $('#silenceDurationLabel');
   const maxDurationSelect = $('#maxDuration');
+
+  // 视频模式控件
+  const videoModeToggle = $('#videoModeToggle');
+  const videoPreview = $('#videoPreview');
+  const previewVideo = $('#previewVideo');
 
   const toastContainer = createToastContainer();
 
@@ -338,13 +349,19 @@
     }
   }
 
-  // 上传音频（v1.1: 增加 duration_ms 和 trigger_type）
+  // 上传音频（v1.2: 增加截帧）
   async function uploadAudio(blob, durationMs, triggerType) {
     const formData = new FormData();
     const ext = blob.type.includes('ogg') ? 'ogg' : 'webm';
     formData.append('audio', blob, `recording.${ext}`);
     formData.append('duration_ms', String(durationMs));
     formData.append('trigger_type', triggerType || 'manual');
+
+    // 添加截帧
+    for (const frame of capturedFrames) {
+      formData.append('frames', frame.blob, `frame_${frame.at}.jpg`);
+    }
+
     return apiFetch('/api/recordings/upload', {
       method: 'POST',
       body: formData
@@ -389,7 +406,10 @@
     textEl.textContent = config.text;
 
     // 特殊样式
-    if (newState === 'recording') recordBtn.classList.add('recording');
+    if (newState === 'recording') {
+      recordBtn.classList.add('recording');
+      if (videoMode && videoStream) recordBtn.classList.add('video-recording');
+    }
     else if (newState === 'uploading' || newState === 'interpreting') recordBtn.classList.add('uploading');
     else if (newState === 'monitoring' || (settings.mode === 'auto' && newState === 'idle')) recordBtn.classList.add('monitoring');
 
@@ -437,6 +457,22 @@
       recordingTriggerType = 'manual';
       setAppState('recording');
 
+      // 截帧
+      capturedFrames = [];
+      if (videoMode && videoStream) {
+        setTimeout(async () => {
+          const frame = await captureFrame();
+          if (frame) capturedFrames.push({ blob: frame, at: 'start' });
+        }, 1000);
+        // >3秒时截中间帧
+        videoFrameTimeoutId = setTimeout(async () => {
+          if (appState === 'recording' && videoMode) {
+            const frame = await captureFrame();
+            if (frame) capturedFrames.push({ blob: frame, at: 'mid' });
+          }
+        }, 3000);
+      }
+
       // 启动计时器
       timerEl.classList.remove('hidden');
       timerEl.textContent = '00:00';
@@ -456,9 +492,21 @@
 
   function stopRecording() {
     if (mediaRecorder && mediaRecorder.state === 'recording') {
-      mediaRecorder.stop();
+      // 截最后一帧
+      if (videoMode && videoStream) {
+        captureFrame().then(frame => {
+          if (frame) capturedFrames.push({ blob: frame, at: 'end' });
+          mediaRecorder.stop();
+        });
+      } else {
+        mediaRecorder.stop();
+      }
       clearInterval(timerInterval);
       timerInterval = null;
+      if (videoFrameTimeoutId) {
+        clearTimeout(videoFrameTimeoutId);
+        videoFrameTimeoutId = null;
+      }
     }
   }
 
@@ -504,6 +552,21 @@
       recordingTriggerType = 'auto';
       setAppState('recording', '检测到猫叫声，正在录音…');
 
+      // 截帧
+      capturedFrames = [];
+      if (videoMode && videoStream) {
+        setTimeout(async () => {
+          const frame = await captureFrame();
+          if (frame) capturedFrames.push({ blob: frame, at: 'start' });
+        }, 1000);
+        videoFrameTimeoutId = setTimeout(async () => {
+          if (appState === 'recording' && videoMode) {
+            const frame = await captureFrame();
+            if (frame) capturedFrames.push({ blob: frame, at: 'mid' });
+          }
+        }, 3000);
+      }
+
       // 启动计时器
       timerEl.classList.remove('hidden');
       timerEl.textContent = '00:00';
@@ -516,9 +579,21 @@
 
   function stopAutoRecording() {
     if (mediaRecorder && mediaRecorder.state === 'recording') {
-      mediaRecorder.stop();
+      // 截最后一帧
+      if (videoMode && videoStream) {
+        captureFrame().then(frame => {
+          if (frame) capturedFrames.push({ blob: frame, at: 'end' });
+          mediaRecorder.stop();
+        });
+      } else {
+        mediaRecorder.stop();
+      }
       clearInterval(timerInterval);
       timerInterval = null;
+      if (videoFrameTimeoutId) {
+        clearTimeout(videoFrameTimeoutId);
+        videoFrameTimeoutId = null;
+      }
     }
     // VAD 不需要停，继续监听
   }
@@ -551,6 +626,13 @@
 
     setAppState('uploading', '正在上传…');
     stopWaveform();
+
+    // 手动模式停止视频流
+    if (!isAuto && videoMode) {
+      stopVideoStream();
+      videoModeToggle.checked = false;
+      videoMode = false;
+    }
 
     try {
       const uploadResult = await uploadAudio(blob, durationMs, triggerType);
@@ -661,6 +743,50 @@
     setAppState('idle');
     timerEl.classList.add('hidden');
     statusEl.textContent = '';
+  }
+
+  // ===== 视频模式控制 =====
+
+  if (videoModeToggle) {
+    videoModeToggle.addEventListener('change', async (e) => {
+      videoMode = e.target.checked;
+      if (videoMode) {
+        try {
+          videoStream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } }
+          });
+          previewVideo.srcObject = videoStream;
+          videoPreview.classList.remove('hidden');
+          showToast('录像模式已开启', 'success');
+        } catch (err) {
+          showToast('无法访问摄像头: ' + err.message, 'error');
+          e.target.checked = false;
+          videoMode = false;
+        }
+      } else {
+        stopVideoStream();
+      }
+    });
+  }
+
+  function stopVideoStream() {
+    if (videoStream) {
+      videoStream.getTracks().forEach(t => t.stop());
+      videoStream = null;
+    }
+    if (previewVideo) previewVideo.srcObject = null;
+    if (videoPreview) videoPreview.classList.add('hidden');
+  }
+
+  function captureFrame() {
+    const canvas = document.getElementById('frameCanvas');
+    if (!canvas || !previewVideo.videoWidth || !previewVideo.videoHeight) return null;
+    canvas.width = previewVideo.videoWidth;
+    canvas.height = previewVideo.videoHeight;
+    canvas.getContext('2d').drawImage(previewVideo, 0, 0);
+    return new Promise(resolve => {
+      canvas.toBlob(blob => resolve(blob), 'image/jpeg', 0.8);
+    });
   }
 
   // ===== Canvas 波形可视化 =====
@@ -917,6 +1043,98 @@
     metaEl.innerHTML = renderLabels(labels);
 
     latestResult.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+    // 同时更新新版结果区
+    displayResult(d);
+  }
+
+  // ===== v1.2 结果展示 =====
+
+  function displayResult(result) {
+    const resultArea = document.getElementById('resultArea');
+    if (!resultArea) return;
+    resultArea.classList.remove('hidden');
+
+    // 频谱图
+    const specImg = document.getElementById('spectrogramImg');
+    const specContainer = document.getElementById('spectrogramContainer');
+    if (specImg && result.spectrogram) {
+      specImg.src = `/api/recordings/${result.id}/spectrogram?t=${Date.now()}`;
+      if (specContainer) specContainer.classList.remove('hidden');
+    } else if (specContainer) {
+      specContainer.classList.add('hidden');
+    }
+
+    // 数值特征标签
+    const featuresTags = document.getElementById('featuresTags');
+    if (featuresTags) {
+      featuresTags.innerHTML = '';
+      if (result.features) {
+        const f = result.features;
+        if (f.dominant_freq) featuresTags.innerHTML += `<span class="feature-tag">主频 ${f.dominant_freq}Hz</span>`;
+        if (f.energy_db) featuresTags.innerHTML += `<span class="feature-tag">能量 ${f.energy_db}dB</span>`;
+        if (f.peak_count) featuresTags.innerHTML += `<span class="feature-tag">${f.peak_count} 次叫声</span>`;
+        if (f.tempo) featuresTags.innerHTML += `<span class="feature-tag">节奏 ${f.tempo}/s</span>`;
+        if (f.spectral_centroid) featuresTags.innerHTML += `<span class="feature-tag">亮度 ${f.spectral_centroid}Hz</span>`;
+      }
+    }
+
+    // 视频帧
+    const framesCard = document.getElementById('framesCard');
+    const framesGallery = document.getElementById('framesGallery');
+    if (framesCard && framesGallery) {
+      if (result.frameCount > 0) {
+        framesCard.classList.remove('hidden');
+        framesGallery.innerHTML = '';
+        for (let i = 0; i < result.frameCount; i++) {
+          framesGallery.innerHTML += `<img src="/api/recordings/${result.id}/frames/${i}" class="frame-thumb" alt="截帧${i+1}" />`;
+        }
+      } else {
+        framesCard.classList.add('hidden');
+      }
+    }
+
+    // 翻译结果
+    const interpretation = result.interpretation || {};
+    const translation = interpretation.translation || interpretation.text || result.translation || '';
+    const advice = interpretation.advice || interpretation.suggestion || '';
+    const labels = result.labels || [];
+
+    const translationText = document.getElementById('translationText');
+    const behaviorTags = document.getElementById('behaviorTags');
+    const suggestionText = document.getElementById('suggestionText');
+
+    if (translationText) translationText.textContent = translation || '（无翻译结果）';
+    if (behaviorTags) {
+      behaviorTags.innerHTML = renderLabels(labels);
+    }
+    if (suggestionText) {
+      if (advice) {
+        suggestionText.textContent = advice;
+        suggestionText.classList.remove('hidden');
+      } else {
+        suggestionText.classList.add('hidden');
+      }
+    }
+
+    // 标注按钮事件
+    const confirmBtn = document.getElementById('confirmBtn');
+    const correctBtn = document.getElementById('correctBtn');
+    if (confirmBtn) {
+      confirmBtn.onclick = () => {
+        if (result.id) {
+          showToast('标注已确认', 'success');
+        }
+      };
+    }
+    if (correctBtn) {
+      correctBtn.onclick = () => {
+        showToast('修正功能开发中', 'info');
+      };
+    }
+
+    // 滚动到结果区
+    resultArea.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
 
   // ===== 历史记录 =====
