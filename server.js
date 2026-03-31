@@ -10,10 +10,6 @@ const { getDb, UPLOADS_DIR, loadAiConfig, saveAiConfig } = require('./db');
 const { analyzeAudio } = require('./analyzer');
 const { interpretRecording, reloadAiConfig, testAiConnection } = require('./ai');
 
-// Canvas 检测（用于频谱图格式判断）
-let Canvas;
-try { Canvas = require('canvas'); Canvas.createCanvas(1, 1); } catch { Canvas = null; }
-
 const app = express();
 const PORT = process.env.PORT || 3010;
 const isDev = process.env.NODE_ENV !== 'production';
@@ -86,6 +82,15 @@ const MIME_MAP = {
   '.m4a': 'audio/mp4'
 };
 
+// 路径安全校验（防路径遍历）
+function safeFilePath(dir, filename) {
+  const resolved = path.resolve(dir, filename);
+  if (!resolved.startsWith(path.resolve(dir))) {
+    return null;
+  }
+  return resolved;
+}
+
 // ======== API 路由 ========
 
 // 上传录音（支持音频 + 视频帧）
@@ -101,7 +106,7 @@ app.post('/api/recordings/upload', mixedUpload.fields([
 
     const db = getDb();
     const id = uuidv4();
-    const actualDuration = req.body.duration_ms ? parseInt(req.body.duration_ms) : null;
+    const actualDuration = req.body.duration_ms ? (Number.isFinite(parseInt(req.body.duration_ms)) ? parseInt(req.body.duration_ms) : null) : null;
     const triggerType = req.body.trigger_type || 'manual';
 
     // 生成频谱图 + 特征提取
@@ -111,7 +116,7 @@ app.post('/api/recordings/upload', mixedUpload.fields([
     // 保存频谱图
     let spectrogramPath = null;
     if (specResult.spectrogramBuffer) {
-      const ext = Canvas ? '.png' : '.svg';
+      const ext = specResult.format === 'svg' ? '.svg' : '.png';
       spectrogramPath = `spec_${id}${ext}`;
       fs.writeFileSync(
         path.join(UPLOADS_DIR, spectrogramPath),
@@ -256,8 +261,8 @@ app.get('/api/recordings/:id/audio', (req, res) => {
     const recording = db.prepare('SELECT filename FROM recordings WHERE id = ?').get(req.params.id);
     if (!recording) return res.status(404).json({ error: '录音不存在' });
 
-    const filePath = path.join(UPLOADS_DIR, recording.filename);
-    if (!fs.existsSync(filePath)) return res.status(404).json({ error: '音频文件不存在' });
+    const filePath = safeFilePath(UPLOADS_DIR, recording.filename);
+    if (!filePath || !fs.existsSync(filePath)) return res.status(404).json({ error: '音频文件不存在' });
 
     const ext = path.extname(recording.filename).toLowerCase();
     res.set('Content-Type', MIME_MAP[ext] || 'audio/webm');
@@ -275,7 +280,8 @@ app.get('/api/recordings/:id/spectrogram', (req, res) => {
   if (!rec?.spectrogram_path) {
     return res.status(404).json({ error: '无频谱图' });
   }
-  const filePath = path.join(UPLOADS_DIR, rec.spectrogram_path);
+  const filePath = safeFilePath(UPLOADS_DIR, rec.spectrogram_path);
+  if (!filePath || !fs.existsSync(filePath)) return res.status(404).json({ error: '频谱图文件不存在' });
   const ext = path.extname(rec.spectrogram_path).toLowerCase();
   res.set('Content-Type', ext === '.svg' ? 'image/svg+xml' : 'image/png');
   res.sendFile(filePath);
@@ -289,7 +295,9 @@ app.get('/api/recordings/:id/frames/:index', (req, res) => {
   if (!frame) {
     return res.status(404).json({ error: '无此帧' });
   }
-  res.sendFile(path.join(UPLOADS_DIR, 'frames', frame.filename));
+  const filePath = safeFilePath(path.join(UPLOADS_DIR, 'frames'), frame.filename);
+  if (!filePath || !fs.existsSync(filePath)) return res.status(404).json({ error: '帧文件不存在' });
+  res.sendFile(filePath);
 });
 
 // 触发 AI 解读

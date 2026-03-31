@@ -175,12 +175,15 @@ function getMockInterpretation(features) {
 
   // 用数值特征判断倾向
   let preferred = mockTranslations[0];
-  if (features.dominant_freq) {
+  if (features.dominant_freq != null) {
     if (features.dominant_freq > 2000) {
-      preferred = features.peak_count > 2 ? mockTranslations[0] : mockTranslations[2];
+      preferred = (features.peak_count != null && features.peak_count > 2) ? mockTranslations[0] : mockTranslations[2];
     } else if (features.dominant_freq < 800) {
       preferred = mockTranslations[1];
     }
+  } else if (features.peak_count != null) {
+    // fallback: 用波峰数判断
+    preferred = features.peak_count > 3 ? mockTranslations[0] : mockTranslations[4];
   }
 
   return {

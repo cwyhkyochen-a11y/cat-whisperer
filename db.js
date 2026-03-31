@@ -89,6 +89,56 @@ function initTables(db) {
   // 列迁移：recordings 新增字段
   try { db.exec(`ALTER TABLE recordings ADD COLUMN spectrogram_path TEXT`); } catch {}
   try { db.exec(`ALTER TABLE recordings ADD COLUMN features_json TEXT`); } catch {}
+
+  // 索引：frames 和 annotations 表按 recording_id 查询频繁
+  db.exec('CREATE INDEX IF NOT EXISTS idx_frames_recording ON frames(recording_id)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_annotations_recording ON annotations(recording_id)');
+
+  // 迁移：给 labels 和 interpretations 加 ON DELETE CASCADE
+  migrateCascade(db);
+}
+
+// 迁移：给 labels 和 interpretations 加 ON DELETE CASCADE
+function migrateCascade(db) {
+  const fkInfo = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='labels'").get();
+  if (fkInfo && !fkInfo.sql.includes('ON DELETE CASCADE')) {
+    db.exec('PRAGMA foreign_keys=off');
+    db.exec(`
+      CREATE TABLE labels_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        recording_id TEXT NOT NULL,
+        label_type TEXT NOT NULL,
+        category TEXT,
+        emotion TEXT,
+        confidence REAL DEFAULT 0,
+        notes TEXT,
+        created_at TEXT DEFAULT (datetime('now')),
+        FOREIGN KEY (recording_id) REFERENCES recordings(id) ON DELETE CASCADE
+      );
+      INSERT INTO labels_new SELECT * FROM labels;
+      DROP TABLE labels;
+      ALTER TABLE labels_new RENAME TO labels;
+    `);
+    db.exec(`
+      CREATE TABLE interpretations_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        recording_id TEXT NOT NULL,
+        translation TEXT NOT NULL,
+        emotion TEXT,
+        confidence REAL DEFAULT 0,
+        suggestion TEXT,
+        context TEXT,
+        model TEXT,
+        created_at TEXT DEFAULT (datetime('now')),
+        FOREIGN KEY (recording_id) REFERENCES recordings(id) ON DELETE CASCADE
+      );
+      INSERT INTO interpretations_new SELECT * FROM interpretations;
+      DROP TABLE interpretations;
+      ALTER TABLE interpretations_new RENAME TO interpretations;
+    `);
+    db.exec('PRAGMA foreign_keys=on');
+    console.log('[DB] 外键 CASCADE 迁移完成');
+  }
 }
 
 function closeDb() {

@@ -37,7 +37,7 @@ async function generateSpectrogram(audioPath) {
   return {
     spectrogramBuffer,
     features,
-    spectrogramFilename: null
+    format: spectrogramBuffer ? (Canvas ? 'png' : 'svg') : null
   };
 }
 
@@ -244,57 +244,63 @@ function renderPngSpectrogram(analysis, duration) {
 }
 
 /**
- * 渲染频谱图为 SVG（fallback）
+ * 渲染频谱图为 SVG（fallback，简化版避免巨大 DOM）
  */
 function renderSvgSpectrogram(analysis, duration) {
   const { spectrogram, freqs, numFrames } = analysis;
-  const width = Math.min(numFrames, 600);
-  const height = 300;
+  const width = Math.min(numFrames, 300); // 降分辨率
+  const height = 150;
 
+  // 生成像素数据数组（RGBA）
   let globalMax = findGlobalMax(spectrogram);
 
   const maxFreqBin = Math.min(freqs.length, Math.floor(freqs.length * 8000 / (analysis.sampleRate / 2)));
   const binPerPixel = maxFreqBin / height;
+  const pixels = new Uint8Array(width * height * 4);
 
-  // 生成像素数据（下采样到 SVG rect）
-  const pixelRows = [];
-  for (let y = 0; y < height; y++) {
-    const row = [];
-    for (let x = 0; x < width; x++) {
-      const frameIdx = Math.floor(x * numFrames / width);
-      if (frameIdx >= spectrogram.length) {
-        row.push('#fafbfc');
-        continue;
-      }
+  for (let x = 0; x < width; x++) {
+    const frameIdx = Math.floor(x * spectrogram.length / width);
+    for (let y = 0; y < height; y++) {
       const bin = Math.floor((height - 1 - y) * binPerPixel);
-      const val = spectrogram[frameIdx][bin] / globalMax;
+      const val = spectrogram[frameIdx]?.[bin] / globalMax || 0;
+      const offset = (y * width + x) * 4;
       const c = heatmapColor(val);
-      row.push(`rgb(${c[0]},${c[1]},${c[2]})`);
-    }
-    pixelRows.push(row);
-  }
-
-  // 用 SVG rect 渲染
-  let rects = '';
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      if (pixelRows[y][x] !== '#fafbfc') {
-        rects += `<rect x="${x}" y="${y}" width="1" height="1" fill="${pixelRows[y][x]}"/>`;
-      }
+      pixels[offset] = c[0];
+      pixels[offset + 1] = c[1];
+      pixels[offset + 2] = c[2];
+      pixels[offset + 3] = 255;
     }
   }
 
-  const svg = `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
-  <rect width="${width}" height="${height}" fill="#fafbfc"/>
-  ${rects}
-  <text x="4" y="12" fill="#a1a1aa" font-size="10" font-family="sans-serif">8kHz</text>
-  <text x="4" y="${height / 2}" fill="#a1a1aa" font-size="10" font-family="sans-serif">4kHz</text>
-  <text x="4" y="${height - 4}" fill="#a1a1aa" font-size="10" font-family="sans-serif">0Hz</text>
-  <text x="${width - 36}" y="${height - 4}" fill="#a1a1aa" font-size="10" font-family="sans-serif">${duration.toFixed(1)}s</text>
-</svg>`;
+  // 如果有 Canvas，用 Canvas 生成 PNG 再嵌入 SVG
+  if (Canvas) {
+    const { createCanvas } = Canvas;
+    const canvas = createCanvas(width, height);
+    const ctx = canvas.getContext('2d');
+    const imageData = ctx.createImageData(width, height);
+    imageData.data.set(pixels);
+    ctx.putImageData(imageData, 0, 0);
+    const pngBase64 = canvas.toBuffer('image/png').toString('base64');
+    return Buffer.from(
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` +
+      `<image href="data:image/png;base64,${pngBase64}" width="${width}" height="${height}"/>` +
+      `<text x="4" y="12" fill="#a1a1aa" font-size="10" font-family="sans-serif">8kHz</text>` +
+      `<text x="4" y="${height / 2}" fill="#a1a1aa" font-size="10" font-family="sans-serif">4kHz</text>` +
+      `<text x="4" y="${height - 4}" fill="#a1a1aa" font-size="10" font-family="sans-serif">0Hz</text>` +
+      `<text x="${width - 36}" y="${height - 4}" fill="#a1a1aa" font-size="10" font-family="sans-serif">${duration.toFixed(1)}s</text>` +
+      `</svg>`,
+      'utf-8'
+    );
+  }
 
-  return Buffer.from(svg, 'utf-8');
+  // 无 Canvas：返回简单说明 SVG
+  return Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` +
+    `<rect width="${width}" height="${height}" fill="#fafbfc"/>` +
+    `<text x="${width / 2}" y="${height / 2}" text-anchor="middle" fill="#a1a1aa" font-size="14">频谱图（需要安装 Canvas 依赖）</text>` +
+    `</svg>`,
+    'utf-8'
+  );
 }
 
 /**

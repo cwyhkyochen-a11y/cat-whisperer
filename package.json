@@ -1,6 +1,6 @@
 {
   "name": "cat-whisperer",
-  "version": "1.0.0",
+  "version": "1.2.1",
   "description": "🐱 猫语翻译器 - AI驱动的猫叫声分析工具",
   "main": "server.js",
   "scripts": {

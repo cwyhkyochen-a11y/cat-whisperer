@@ -184,6 +184,7 @@
 
   // ===== 状态 =====
   let appState = 'idle'; // idle | monitoring | recording | uploading | interpreting
+  let currentResultId = null; // 当前展示的录音 ID（用于标注操作）
   let mediaRecorder = null;
   let audioChunks = [];
   let timerInterval = null;
@@ -342,7 +343,7 @@
   async function fetchRecordings() {
     try {
       const data = await apiFetch(`/api/recordings?page=1&limit=${PAGELIMIT}`);
-      const items = data.items || data.data || data || [];
+      const items = data.data || [];
       renderHistory(items);
     } catch (err) {
       showToast(err.message, 'error');
@@ -352,7 +353,9 @@
   // 上传音频（v1.2: 增加截帧）
   async function uploadAudio(blob, durationMs, triggerType) {
     const formData = new FormData();
-    const ext = blob.type.includes('ogg') ? 'ogg' : 'webm';
+    const mime = blob.type || 'audio/webm';
+    const extMatch = mime.match(/audio\/(\w+)/);
+    const ext = extMatch ? extMatch[1] : 'webm';
     formData.append('audio', blob, `recording.${ext}`);
     formData.append('duration_ms', String(durationMs));
     formData.append('trigger_type', triggerType || 'manual');
@@ -648,7 +651,7 @@
 
       const interpretResult = await interpretRecording(recordingId);
 
-      showLatestResult(interpretResult);
+      showLatestResult({ ...uploadResult, ...interpretResult });
 
       if (isAuto) {
         setAppState('monitoring', '继续监听…');
@@ -1055,10 +1058,13 @@
     if (!resultArea) return;
     resultArea.classList.remove('hidden');
 
+    // 记录当前录音 ID
+    currentResultId = result.id;
+
     // 频谱图
     const specImg = document.getElementById('spectrogramImg');
     const specContainer = document.getElementById('spectrogramContainer');
-    if (specImg && result.spectrogram) {
+    if (specImg && result.id && result.spectrogram) {
       specImg.src = `/api/recordings/${result.id}/spectrogram?t=${Date.now()}`;
       if (specContainer) specContainer.classList.remove('hidden');
     } else if (specContainer) {
@@ -1071,11 +1077,11 @@
       featuresTags.innerHTML = '';
       if (result.features) {
         const f = result.features;
-        if (f.dominant_freq) featuresTags.innerHTML += `<span class="feature-tag">主频 ${f.dominant_freq}Hz</span>`;
-        if (f.energy_db) featuresTags.innerHTML += `<span class="feature-tag">能量 ${f.energy_db}dB</span>`;
-        if (f.peak_count) featuresTags.innerHTML += `<span class="feature-tag">${f.peak_count} 次叫声</span>`;
-        if (f.tempo) featuresTags.innerHTML += `<span class="feature-tag">节奏 ${f.tempo}/s</span>`;
-        if (f.spectral_centroid) featuresTags.innerHTML += `<span class="feature-tag">亮度 ${f.spectral_centroid}Hz</span>`;
+        if (f.dominant_freq != null) featuresTags.innerHTML += `<span class="feature-tag">主频 ${f.dominant_freq}Hz</span>`;
+        if (f.energy_db != null) featuresTags.innerHTML += `<span class="feature-tag">能量 ${f.energy_db}dB</span>`;
+        if (f.peak_count != null) featuresTags.innerHTML += `<span class="feature-tag">${f.peak_count} 次叫声</span>`;
+        if (f.tempo != null) featuresTags.innerHTML += `<span class="feature-tag">节奏 ${f.tempo}/s</span>`;
+        if (f.spectral_centroid != null) featuresTags.innerHTML += `<span class="feature-tag">亮度 ${f.spectral_centroid}Hz</span>`;
       }
     }
 
@@ -1083,7 +1089,7 @@
     const framesCard = document.getElementById('framesCard');
     const framesGallery = document.getElementById('framesGallery');
     if (framesCard && framesGallery) {
-      if (result.frameCount > 0) {
+      if (result.id && result.frameCount > 0) {
         framesCard.classList.remove('hidden');
         framesGallery.innerHTML = '';
         for (let i = 0; i < result.frameCount; i++) {
@@ -1121,15 +1127,37 @@
     const confirmBtn = document.getElementById('confirmBtn');
     const correctBtn = document.getElementById('correctBtn');
     if (confirmBtn) {
-      confirmBtn.onclick = () => {
-        if (result.id) {
+      confirmBtn.onclick = async () => {
+        const id = currentResultId;
+        if (!id) return;
+        try {
+          await apiFetch(`/api/recordings/${id}/annotation/confirm`, { method: 'POST' });
           showToast('标注已确认', 'success');
+        } catch (err) {
+          showToast('确认失败: ' + err.message, 'error');
         }
       };
     }
     if (correctBtn) {
-      correctBtn.onclick = () => {
-        showToast('修正功能开发中', 'info');
+      correctBtn.onclick = async () => {
+        const id = currentResultId;
+        if (!id) return;
+        const behavior = prompt('修正行为分类（留空不改）:');
+        const emotion = prompt('修正情绪（留空不改）:');
+        if (!behavior && !emotion) return;
+        try {
+          const body = {};
+          if (behavior) body.behavior = behavior;
+          if (emotion) body.emotion = emotion;
+          await apiFetch(`/api/recordings/${id}/annotation`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+          });
+          showToast('标注已修正', 'success');
+        } catch (err) {
+          showToast('修正失败: ' + err.message, 'error');
+        }
       };
     }
 
