@@ -112,6 +112,40 @@
         <option value="300000" selected>5 分钟</option>
       </select>
     </div>
+
+    <div class="settings-divider"></div>
+    <div class="settings-group">
+      <h4 class="settings-group-title"><i data-lucide="cpu"></i> AI 模型配置</h4>
+
+      <div class="ai-status" id="aiStatus">
+        <span class="status-dot"></span>
+        <span class="status-text">检测中...</span>
+      </div>
+
+      <label class="settings-label">API 地址</label>
+      <input type="url" id="aiApiBase" class="settings-input" placeholder="https://openrouter.ai/api/v1">
+
+      <label class="settings-label">API Key</label>
+      <div class="input-with-action">
+        <input type="password" id="aiApiKey" class="settings-input" placeholder="sk-xxxx">
+        <button id="toggleKeyVisibility" class="btn-icon-sm" type="button">
+          <i data-lucide="eye"></i>
+        </button>
+      </div>
+      <div class="input-hint" id="keyHint"></div>
+
+      <label class="settings-label">模型</label>
+      <input type="text" id="aiModel" class="settings-input" placeholder="google/gemini-2.0-flash-001">
+
+      <div class="ai-actions">
+        <button id="testAiBtn" class="btn btn-secondary" type="button">
+          <i data-lucide="zap"></i> 测试连接
+        </button>
+        <button id="saveAiBtn" class="btn btn-primary" type="button">
+          <i data-lucide="save"></i> 保存配置
+        </button>
+      </div>
+    </div>
   </div>
 
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>

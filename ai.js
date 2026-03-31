@@ -2,10 +2,55 @@ const { getDb } = require('./db');
 const { analyzeAudio } = require('./analyzer');
 const path = require('path');
 
-// 从 .env 读取 AI 配置
-const AI_API_BASE = process.env.AI_API_BASE;
-const AI_API_KEY = process.env.AI_API_KEY;
-const AI_MODEL = process.env.AI_MODEL;
+// 模块级配置（初始从 .env 读取）
+let aiConfig = {
+  api_base: process.env.AI_API_BASE || '',
+  api_key: process.env.AI_API_KEY || '',
+  model: process.env.AI_MODEL || ''
+};
+
+// 初始化时也尝试从文件加载
+try {
+  const { loadAiConfig } = require('./db');
+  const fileConfig = loadAiConfig();
+  if (fileConfig.api_base && fileConfig.api_key && fileConfig.model) {
+    aiConfig = fileConfig;
+  }
+} catch {}
+
+// 暴露热更新函数
+function reloadAiConfig(newConfig) {
+  aiConfig = { ...newConfig };
+  console.log('[AI] 配置已热更新');
+}
+
+// 暴露测试连接函数
+async function testAiConnection() {
+  if (!aiConfig.api_base || !aiConfig.api_key || !aiConfig.model) {
+    return { success: false, message: 'AI 未配置' };
+  }
+  try {
+    const response = await fetch(`${aiConfig.api_base}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${aiConfig.api_key}`
+      },
+      body: JSON.stringify({
+        model: aiConfig.model,
+        messages: [{ role: 'user', content: '说"喵"' }],
+        max_tokens: 10
+      }),
+      signal: AbortSignal.timeout(15000)
+    });
+    if (!response.ok) {
+      return { success: false, message: `API 返回 ${response.status}` };
+    }
+    return { success: true, message: '连接成功' };
+  } catch (err) {
+    return { success: false, message: err.message };
+  }
+}
 
 const SYSTEM_PROMPT = '你是猫行为学专家，根据音频特征和上下文分析猫叫的含义。请用中文回复。请严格以 JSON 格式返回结果，格式为：{"translation": "翻译结果", "emotion": "情绪", "confidence": 0.8, "suggestion": "建议"}';
 
@@ -102,7 +147,7 @@ function getMockInterpretation(features) {
  * @returns {object} 解读结果
  */
 async function callAi(features, context) {
-  if (!AI_API_BASE || !AI_API_KEY || !AI_MODEL) {
+  if (!aiConfig.api_base || !aiConfig.api_key || !aiConfig.model) {
     console.log('[AI] 未配置 AI 服务，使用 mock 数据');
     return getMockInterpretation(features);
   }
@@ -123,14 +168,14 @@ ${JSON.stringify(context, null, 2)}
 
     let response;
     try {
-      response = await fetch(`${AI_API_BASE}/chat/completions`, {
+      response = await fetch(`${aiConfig.api_base}/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${AI_API_KEY}`
+          'Authorization': `Bearer ${aiConfig.api_key}`
         },
         body: JSON.stringify({
-          model: AI_MODEL,
+          model: aiConfig.model,
           messages: [
             { role: 'system', content: SYSTEM_PROMPT },
             { role: 'user', content: userPrompt }
@@ -217,7 +262,7 @@ async function interpretRecording(db, recordingId) {
     result.confidence,
     result.suggestion,
     JSON.stringify({ features, context }),
-    AI_MODEL || 'mock'
+    aiConfig.model || 'mock'
   );
 
   // 同时写入一条 auto label
@@ -234,9 +279,9 @@ async function interpretRecording(db, recordingId) {
     emotion: result.emotion,
     confidence: result.confidence,
     suggestion: result.suggestion,
-    model: AI_MODEL || 'mock',
+    model: aiConfig.model || 'mock',
     _warning: result._warning || null
   };
 }
 
-module.exports = { interpretRecording };
+module.exports = { interpretRecording, reloadAiConfig, testAiConnection };

@@ -794,6 +794,7 @@
   function openSettings() {
     settingsPanel.classList.add('open');
     settingsOverlay.classList.add('visible');
+    loadAiConfig();
   }
 
   function closeSettings() {
@@ -1132,6 +1133,98 @@
     }
   }
 
+  // ===== AI 配置管理 =====
+
+  async function loadAiConfig() {
+    try {
+      const data = await apiFetch('/api/config/ai');
+      const statusEl = document.getElementById('aiStatus');
+      const dotEl = statusEl.querySelector('.status-dot');
+      const textEl = statusEl.querySelector('.status-text');
+      const keyHint = document.getElementById('keyHint');
+
+      document.getElementById('aiApiBase').value = data.api_base || '';
+      document.getElementById('aiModel').value = data.model || '';
+
+      if (data.configured) {
+        dotEl.className = 'status-dot configured';
+        textEl.textContent = 'AI 已配置';
+        keyHint.textContent = data.api_key_masked ? `当前 Key: ${data.api_key_masked}` : '';
+      } else {
+        dotEl.className = 'status-dot unconfigured';
+        textEl.textContent = 'AI 未配置（使用模拟数据）';
+        keyHint.textContent = '';
+      }
+    } catch {
+      // 静默失败
+    }
+  }
+
+  async function saveAiConfig() {
+    const api_base = document.getElementById('aiApiBase').value.trim();
+    const api_key = document.getElementById('aiApiKey').value.trim();
+    const model = document.getElementById('aiModel').value.trim();
+
+    if (!api_base || !api_key || !model) {
+      showToast('三项都必填', 'error');
+      return;
+    }
+
+    try {
+      await apiFetch('/api/config/ai', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ api_base, api_key, model })
+      });
+      showToast('配置已保存，即时生效', 'success');
+      document.getElementById('aiApiKey').value = '';
+      loadAiConfig();
+    } catch (err) {
+      showToast('保存失败: ' + err.message, 'error');
+    }
+  }
+
+  async function testAiConnection() {
+    const btn = document.getElementById('testAiBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i data-lucide="loader-2"></i> 测试中...';
+    refreshIcons();
+
+    try {
+      const result = await apiFetch('/api/config/ai/test', { method: 'POST' });
+      if (result.success) {
+        showToast('AI 连接成功！', 'success');
+      } else {
+        showToast('连接失败: ' + result.message, 'error');
+      }
+    } catch (err) {
+      showToast('测试失败: ' + err.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '<i data-lucide="zap"></i> 测试连接';
+      refreshIcons();
+    }
+  }
+
+  function toggleKeyVisibility() {
+    const input = document.getElementById('aiApiKey');
+    const btn = document.getElementById('toggleKeyVisibility');
+    if (input.type === 'password') {
+      input.type = 'text';
+      btn.innerHTML = '<i data-lucide="eye-off"></i>';
+    } else {
+      input.type = 'password';
+      btn.innerHTML = '<i data-lucide="eye"></i>';
+    }
+    refreshIcons();
+  }
+
+  function bindAiConfigEvents() {
+    document.getElementById('saveAiBtn')?.addEventListener('click', saveAiConfig);
+    document.getElementById('testAiBtn')?.addEventListener('click', testAiConnection);
+    document.getElementById('toggleKeyVisibility')?.addEventListener('click', toggleKeyVisibility);
+  }
+
   // ===== 事件绑定 =====
 
   recordBtn.addEventListener('click', handleRecordBtnClick);
@@ -1148,6 +1241,7 @@
   document.addEventListener('DOMContentLoaded', () => {
     initCanvas();
     initSettingsUI();
+    bindAiConfigEvents();
 
     // 根据设置更新按钮初始状态
     setAppState('idle');
@@ -1157,6 +1251,7 @@
 
     fetchStats();
     fetchRecordings();
+    loadAiConfig();
   });
 
 })();

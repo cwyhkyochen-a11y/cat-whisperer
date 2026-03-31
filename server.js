@@ -6,9 +6,9 @@ const multer = require('multer');
 const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 const fs = require('fs');
-const { getDb, UPLOADS_DIR } = require('./db');
+const { getDb, UPLOADS_DIR, loadAiConfig, saveAiConfig } = require('./db');
 const { analyzeAudio } = require('./analyzer');
-const { interpretRecording } = require('./ai');
+const { interpretRecording, reloadAiConfig, testAiConnection } = require('./ai');
 
 const app = express();
 const PORT = process.env.PORT || 3010;
@@ -253,6 +253,46 @@ app.get('/api/stats', (req, res) => {
   } catch (err) {
     console.error('[Stats] 错误:', err);
     res.status(500).json({ error: isDev ? err.message : '服务器内部错误' });
+  }
+});
+
+// ===== AI 配置 API =====
+
+function maskApiKey(key) {
+  if (!key || key.length < 8) return '';
+  return key.slice(0, 4) + '****' + key.slice(-4);
+}
+
+// 获取 AI 配置（key 脱敏）
+app.get('/api/config/ai', (req, res) => {
+  const config = loadAiConfig();
+  res.json({
+    api_base: config.api_base || '',
+    api_key_masked: maskApiKey(config.api_key || ''),
+    model: config.model || '',
+    configured: !!(config.api_base && config.api_key && config.model)
+  });
+});
+
+// 更新 AI 配置
+app.put('/api/config/ai', (req, res) => {
+  const { api_base, api_key, model } = req.body;
+  if (!api_base || !api_key || !model) {
+    return res.status(400).json({ error: '三个字段都必填' });
+  }
+  saveAiConfig({ api_base, api_key, model });
+  // 热更新 ai.js 的配置
+  reloadAiConfig({ api_base, api_key, model });
+  res.json({ success: true, message: '配置已保存，即时生效' });
+});
+
+// 测试 AI 连接
+app.post('/api/config/ai/test', async (req, res) => {
+  try {
+    const result = await testAiConnection();
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 

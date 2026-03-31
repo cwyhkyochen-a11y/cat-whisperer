@@ -4,6 +4,7 @@ const fs = require('fs');
 
 const DB_PATH = path.join(__dirname, 'data', 'cat_whisperer.db');
 const UPLOADS_DIR = path.join(__dirname, 'uploads');
+const CONFIG_PATH = path.join(__dirname, 'data', 'ai_config.json');
 
 // 确保目录存在
 fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
@@ -71,4 +72,21 @@ function closeDb() {
 process.on('SIGTERM', closeDb);
 process.on('SIGINT', closeDb);
 
-module.exports = { getDb, closeDb, UPLOADS_DIR };
+function loadAiConfig() {
+  try {
+    if (fs.existsSync(CONFIG_PATH)) {
+      return JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+    }
+  } catch {}
+  return {
+    api_base: process.env.AI_API_BASE || '',
+    api_key: process.env.AI_API_KEY || '',
+    model: process.env.AI_MODEL || ''
+  };
+}
+
+function saveAiConfig(config) {
+  fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
+}
+
+module.exports = { getDb, closeDb, UPLOADS_DIR, loadAiConfig, saveAiConfig };
